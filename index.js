@@ -1,7 +1,7 @@
 const express = require('express');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } = require('@whiskeysockets/baileys');
 const pino = require('pino');
-const fs = require('fs'); // Corrupt files delete karne ke liye native module
+const fs = require('fs'); 
 
 const app = express();
 app.use(express.json());
@@ -12,12 +12,17 @@ let currentQR = '';
 async function startSock() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
     
+    // Yahan hum WhatsApp ka sabse latest version pata kar rahe hain (405 Error Fix)
+    const { version, isLatest } = await fetchLatestBaileysVersion();
+    console.log(`WhatsApp Engine starting... Version: ${version.join('.')}, isLatest: ${isLatest}`);
+    
     sock = makeWASocket({
+        version, // Latest version WhatsApp ko bhej rahe hain
         logger: pino({ level: 'silent' }),
         auth: state,
         printQRInTerminal: false,
-        browser: ['MyWhatsAppBot', 'Chrome', '1.0.0'], // Yahan humne WhatsApp ko identity de di
-        syncFullHistory: false // RAM bachane ke liye
+        browser: Browsers.macOS('Desktop'), // WhatsApp ko lagega ki hum Macbook se use kar rahe hain
+        syncFullHistory: false 
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -31,14 +36,14 @@ async function startSock() {
         }
 
         if (connection === 'close') {
-            currentQR = ''; // Connection tutne par QR mita do
+            currentQR = ''; 
             const statusCode = lastDisconnect?.error?.output?.statusCode;
             const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
             
             console.log('❌ Connection tut gaya (Code: ' + statusCode + '). Dobara connect kar rahe hain...');
             
             if (shouldReconnect) {
-                setTimeout(startSock, 2000); // 2 second baad automatically dobara try karega
+                setTimeout(startSock, 2000); 
             } else {
                 console.log('🔴 Purana session kachra ho gaya hai, usey delete kar rahe hain...');
                 if (fs.existsSync('./auth_info')) {
