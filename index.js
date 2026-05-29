@@ -1,6 +1,7 @@
 const express = require('express');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const pino = require('pino');
+const fs = require('fs'); // Corrupt files delete karne ke liye native module
 
 const app = express();
 app.use(express.json());
@@ -8,14 +9,15 @@ app.use(express.json());
 let sock;
 let currentQR = '';
 
-// Baileys WhatsApp Engine Setup
 async function startSock() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info');
     
     sock = makeWASocket({
         logger: pino({ level: 'silent' }),
         auth: state,
-        printQRInTerminal: false // Terminal me QR nahi dikhayenge, browser me dikhayenge
+        printQRInTerminal: false,
+        browser: ['MyWhatsAppBot', 'Chrome', '1.0.0'], // Yahan humne WhatsApp ko identity de di
+        syncFullHistory: false // RAM bachane ke liye
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -23,30 +25,37 @@ async function startSock() {
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         
-        // Agar naya QR aata hai toh use variable me save karo
         if (qr) {
             currentQR = qr;
-            console.log('New QR Generated! Go to /qr to scan.');
+            console.log('✅ QR Code Taiyar Hai! Ab apne browser me /qr wala page refresh karein.');
         }
 
         if (connection === 'close') {
-            currentQR = '';
-            const shouldReconnect = lastDisconnect.error?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log('Connection closed, reconnecting:', shouldReconnect);
+            currentQR = ''; // Connection tutne par QR mita do
+            const statusCode = lastDisconnect?.error?.output?.statusCode;
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            
+            console.log('❌ Connection tut gaya (Code: ' + statusCode + '). Dobara connect kar rahe hain...');
+            
             if (shouldReconnect) {
-                startSock(); // Automatic reconnect logic
+                setTimeout(startSock, 2000); // 2 second baad automatically dobara try karega
+            } else {
+                console.log('🔴 Purana session kachra ho gaya hai, usey delete kar rahe hain...');
+                if (fs.existsSync('./auth_info')) {
+                    fs.rmSync('./auth_info', { recursive: true, force: true });
+                }
+                setTimeout(startSock, 2000);
             }
         } else if (connection === 'open') {
             currentQR = '';
-            console.log('WhatsApp Engine is READY! (Running on ultra-low RAM Baileys mode)');
+            console.log('🚀 WhatsApp Engine is READY!');
         }
     });
 }
 
-// Browser par HD QR Code dikhane ka page
 app.get('/qr', (req, res) => {
     if (!currentQR) {
-        return res.send("<h2 style='font-family:sans-serif; text-align:center; margin-top:20%;'>QR Code abhi taiyar nahi hai, ya phir pehle hi scan ho chuka hai. Kripya 10-15 second baad page refresh karein.</h2>");
+        return res.send("<h2 style='font-family:sans-serif; text-align:center; margin-top:20%;'>QR Code background mein ban raha hai... kripya apne Render Logs check karein aur tabhi refresh karein jab Logs mein '✅ QR Code Taiyar Hai!' likha aaye.</h2>");
     }
     res.send(`
         <html>
@@ -70,7 +79,6 @@ app.get('/qr', (req, res) => {
     `);
 });
 
-// Google Apps Script se data lene wala API Endpoint
 app.post('/send-message', async (req, res) => {
     const { number, message } = req.body;
 
@@ -78,25 +86,18 @@ app.post('/send-message', async (req, res) => {
         return res.status(400).send('Number aur message dono chahiye!');
     }
 
-    // Baileys ka India ka number format: 91XXXXXXXXXX@s.whatsapp.net
     const jid = "91" + number + "@s.whatsapp.net";
 
     try {
-        if (!sock) {
-            return res.status(500).send('WhatsApp engine abhi ready nahi hai.');
-        }
+        if (!sock) return res.status(500).send('Engine ready nahi hai');
         await sock.sendMessage(jid, { text: message });
-        res.status(200).send('Message bhej diya gaya!');
+        res.status(200).send('Message bheja gaya!');
     } catch (error) {
-        console.error('Error sending message:', error);
-        res.status(500).send('Message bhejne mein dikkat aayi.');
+        console.error(error);
+        res.status(500).send('Error aaya');
     }
 });
 
-// Engine ko chalu karna
 startSock();
-
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
