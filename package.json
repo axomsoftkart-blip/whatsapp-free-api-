@@ -1,13 +1,14 @@
 {
-  "name": "whatsapp-api",
+  "name": "whatsapp-free-api",
   "version": "1.0.0",
-  "description": "Free WhatsApp API",
+  "description": "Ultra Low RAM WhatsApp API using Baileys",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
- "dependencies": {
-  "express": "^4.18.2",
-  "@whiskeysockets/baileys": "^6.7.8",
-  "pino": "^8.16.2"
+  "dependencies": {
+    "express": "^4.18.2",
+    "@whiskeysockets/baileys": "^6.7.8",
+    "pino": "^8.16.2"
+  }
 }
