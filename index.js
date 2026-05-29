@@ -4,30 +4,40 @@ const { Client, LocalAuth } = require('whatsapp-web.js');
 const app = express();
 app.use(express.json());
 
-// Naya variable QR code save karne ke liye
 let currentQR = '';
 
+// YAHAN RAM OPTIMIZATION (BRAHMASTRA) LAGAYA GAYA HAI
 const client = new Client({
     authStrategy: new LocalAuth(),
-    puppeteer: { args: ['--no-sandbox', '--disable-setuid-sandbox'] }
+    puppeteer: { 
+        headless: true,
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process', // RAM bachane ki sabse main command
+            '--disable-gpu'
+        ] 
+    }
 });
 
 client.on('qr', (qr) => {
     console.log('QR generated! Go to /qr to scan it.');
-    currentQR = qr; // Code ne naya QR string pakad kar save kar liya
+    currentQR = qr; 
 });
 
 client.on('ready', () => {
-    console.log('WhatsApp Engine is READY!');
-    currentQR = ''; // Scan hote hi memory clear kar do
+    console.log('WhatsApp Engine is READY! (Running on Low-RAM Mode)');
+    currentQR = ''; 
 });
 
-// Ye hai hamara naya jadoo: URL par HD QR Code dikhana
 app.get('/qr', (req, res) => {
     if (!currentQR) {
         return res.send("<h2 style='font-family:sans-serif; text-align:center; margin-top:20%;'>QR Code abhi taiyar nahi hai, ya phir pehle hi scan ho chuka hai. Kripya 10-15 second baad page refresh karein.</h2>");
     }
-    // Ye code browser par ek perfect scannable image banayega
     res.send(`
         <html>
         <head><title>Scan WhatsApp QR</title></head>
