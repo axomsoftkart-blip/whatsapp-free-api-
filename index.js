@@ -13,14 +13,13 @@ async function startSock() {
     try {
         const { state, saveCreds } = await useMultiFileAuthState('auth_info');
         
-        // JADOO 1: Backup Version System (Taaki Server Crash Na Ho)
-        let version = [2, 3000, 1015901307]; // Backup version
+        let version = [2, 3000, 1015901307]; 
         try {
             const fetched = await fetchLatestBaileysVersion();
             version = fetched.version;
             console.log(`WhatsApp Version fetched: ${version.join('.')}`);
-        } catch (fetchError) {
-            console.log('Version fetch fail hua, backup version use kar rahe hain.');
+        } catch (e) {
+            console.log('Version fetch fail, using backup version.');
         }
         
         sock = makeWASocket({
@@ -39,30 +38,27 @@ async function startSock() {
             
             if (qr) {
                 currentQR = qr;
-                console.log('✅ QR Code Taiyar Hai! Ab apne browser me /qr wala page refresh karein.');
+                console.log('✅ QR Code Taiyar Hai! /qr page refresh karein.');
             }
 
             if (connection === 'close') {
                 currentQR = ''; 
                 const statusCode = lastDisconnect?.error?.output?.statusCode;
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-                console.log('❌ Connection tut gaya (Code: ' + statusCode + ').');
+                console.log('❌ Connection tut gaya (Code: ' + statusCode + '). Dobara try kar rahe hain...');
                 if (shouldReconnect) setTimeout(startSock, 2000); 
             } else if (connection === 'open') {
                 currentQR = '';
                 console.log('🚀 WhatsApp Engine is READY!');
             }
         });
-    } catch (fatalError) {
-        // JADOO 2: Ab code application ko exit nahi karega, balki log me error batayega
-        console.error('STARTUP MEIN BADA ERROR:', fatalError);
+    } catch (err) {
+        console.error('STARTUP ERROR:', err);
     }
 }
 
 app.get('/qr', (req, res) => {
-    if (!currentQR) {
-        return res.send("<h2 style='font-family:sans-serif; text-align:center; margin-top:20%;'>QR Code abhi taiyar nahi hai ya scan ho chuka hai.</h2>");
-    }
+    if (!currentQR) return res.send("<h2 style='font-family:sans-serif; text-align:center; margin-top:20%;'>QR Code abhi taiyar nahi hai ya scan ho chuka hai.</h2>");
     res.send(`
         <html>
         <head><title>Scan WhatsApp QR</title></head>
@@ -70,26 +66,24 @@ app.get('/qr', (req, res) => {
             <h2>Scan this QR with WhatsApp Business</h2>
             <div id="qrcode" style="background:white; padding:20px; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.15);"></div>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-            <script>
-                new QRCode(document.getElementById("qrcode"), { text: "${currentQR}", width: 256, height: 256 });
-            </script>
+            <script>new QRCode(document.getElementById("qrcode"), { text: "${currentQR}", width: 256, height: 256 });</script>
         </body>
         </html>
     `);
 });
 
-// UPGRADED API ENDPOINT WITH SMART NUMBER CLEANING
 app.post('/send-message', async (req, res) => {
     let { number, message } = req.body;
-
-    if (!number || !message) {
-        return res.status(400).send('Number aur message dono chahiye!');
-    }
+    if (!number || !message) return res.status(400).send('Number aur message dono chahiye!');
 
     try {
-        if (!sock) return res.status(500).send('Engine ready nahi hai');
+        if (!sock) return res.status(500).send('Engine ready nahi hai.');
+        
+        // Background sync safety check
+        if (!sock.user || !sock.user.id) {
+            return res.status(500).send('WhatsApp background mein chats sync kar raha hai. Kripya 1 minute baad dobara try karein!');
+        }
 
-        // Saare spaces aur plus hata kar clean number banana
         let cleanNumber = number.toString().replace(/\s+/g, '').replace('+', '');
         if (!cleanNumber.startsWith('91') && cleanNumber.length === 10) {
             cleanNumber = '91' + cleanNumber;
