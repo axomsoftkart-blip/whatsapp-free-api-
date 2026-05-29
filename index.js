@@ -1,108 +1,31 @@
-const express = require('express');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, Browsers } = require('@whiskeysockets/baileys');
-const pino = require('pino');
-const fs = require('fs'); 
+function testRenderAPI() {
+  // Aapka Render URL
+  var api_url = "https://whatsapp-free-api-p5l1.onrender.com/send-message";
+  
+  // YAHAN APNA 10 DIGIT NUMBER DAALEIN (Bina +91 ke)
+  var my_number = "9999999999"; 
+  
+  var payload = {
+    "number": my_number,
+    "message": "🚀 Hello Alakesh! Agar aapko ye message mila, toh Apps Script aur API ka connection 100% perfect hai!"
+  };
 
-const app = express();
-app.use(express.json());
+  var options = {
+    "method": "post",
+    "contentType": "application/json",
+    "payload": JSON.stringify(payload),
+    "muteHttpExceptions": true // Isse humein exact error dikhega
+  };
 
-let sock;
-let currentQR = '';
-
-async function startSock() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+  try {
+    Logger.log("Render API ko message bhej rahe hain...");
+    var response = UrlFetchApp.fetch(api_url, options);
     
-    // Yahan hum WhatsApp ka sabse latest version pata kar rahe hain (405 Error Fix)
-    const { version, isLatest } = await fetchLatestBaileysVersion();
-    console.log(`WhatsApp Engine starting... Version: ${version.join('.')}, isLatest: ${isLatest}`);
+    // Result check karna
+    Logger.log("Server Response Code: " + response.getResponseCode());
+    Logger.log("Server Message: " + response.getContentText());
     
-    sock = makeWASocket({
-        version, // Latest version WhatsApp ko bhej rahe hain
-        logger: pino({ level: 'silent' }),
-        auth: state,
-        printQRInTerminal: false,
-        browser: Browsers.macOS('Desktop'), // WhatsApp ko lagega ki hum Macbook se use kar rahe hain
-        syncFullHistory: false 
-    });
-
-    sock.ev.on('creds.update', saveCreds);
-
-    sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        
-        if (qr) {
-            currentQR = qr;
-            console.log('✅ QR Code Taiyar Hai! Ab apne browser me /qr wala page refresh karein.');
-        }
-
-        if (connection === 'close') {
-            currentQR = ''; 
-            const statusCode = lastDisconnect?.error?.output?.statusCode;
-            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-            
-            console.log('❌ Connection tut gaya (Code: ' + statusCode + '). Dobara connect kar rahe hain...');
-            
-            if (shouldReconnect) {
-                setTimeout(startSock, 2000); 
-            } else {
-                console.log('🔴 Purana session kachra ho gaya hai, usey delete kar rahe hain...');
-                if (fs.existsSync('./auth_info')) {
-                    fs.rmSync('./auth_info', { recursive: true, force: true });
-                }
-                setTimeout(startSock, 2000);
-            }
-        } else if (connection === 'open') {
-            currentQR = '';
-            console.log('🚀 WhatsApp Engine is READY!');
-        }
-    });
+  } catch (error) {
+    Logger.log("Bhejne mein Error aaya: " + error.toString());
+  }
 }
-
-app.get('/qr', (req, res) => {
-    if (!currentQR) {
-        return res.send("<h2 style='font-family:sans-serif; text-align:center; margin-top:20%;'>QR Code background mein ban raha hai... kripya apne Render Logs check karein aur tabhi refresh karein jab Logs mein '✅ QR Code Taiyar Hai!' likha aaye.</h2>");
-    }
-    res.send(`
-        <html>
-        <head><title>Scan WhatsApp QR</title></head>
-        <body style="display:flex; justify-content:center; align-items:center; height:100vh; flex-direction:column; background-color:#f0f2f5; font-family:sans-serif;">
-            <h2>Scan this QR with WhatsApp Business</h2>
-            <div id="qrcode" style="background:white; padding:20px; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.15);"></div>
-            <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-            <script>
-                new QRCode(document.getElementById("qrcode"), {
-                    text: "${currentQR}",
-                    width: 256,
-                    height: 256,
-                    colorDark : "#000000",
-                    colorLight : "#ffffff",
-                    correctLevel : QRCode.CorrectLevel.M
-                });
-            </script>
-        </body>
-        </html>
-    `);
-});
-
-app.post('/send-message', async (req, res) => {
-    const { number, message } = req.body;
-
-    if (!number || !message) {
-        return res.status(400).send('Number aur message dono chahiye!');
-    }
-
-    const jid = "91" + number + "@s.whatsapp.net";
-
-    try {
-        if (!sock) return res.status(500).send('Engine ready nahi hai');
-        await sock.sendMessage(jid, { text: message });
-        res.status(200).send('Message bheja gaya!');
-    } catch (error) {
-        console.error(error);
-        res.status(500).send('Error aaya');
-    }
-});
-
-startSock();
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
