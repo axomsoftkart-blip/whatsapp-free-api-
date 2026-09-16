@@ -2,6 +2,7 @@
 
 const express = require("express");
 const pino = require("pino");
+const qrcode = require("qrcode"); // Backend QR generator added
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -57,10 +58,11 @@ async function startSock() {
     });
 
     sock.ev.on("creds.update", saveCreds);
-    sock.ev.on("connection.update", update => {
+    sock.ev.on("connection.update", async (update) => {
       const { connection, lastDisconnect, qr } = update;
       if (qr) {
-        currentQR = qr;
+        // Generate base64 image directly on the backend to prevent frontend crashes
+        currentQR = await qrcode.toDataURL(qr);
         console.log("QR ready. Open /qr to scan.");
       }
       if (connection === "open") {
@@ -140,6 +142,7 @@ app.get("/health", (req, res) => {
   });
 });
 
+// The updated QR route with foolproof rendering
 app.get("/qr", (req, res) => {
   if (!currentQR) {
     return res.send("<!doctype html><html><body style='font-family:Arial,sans-serif;text-align:center;margin-top:15vh'><h2>QR is not ready or already scanned.</h2><p>Refresh after a few seconds if the session is still connecting.</p></body></html>");
@@ -149,9 +152,11 @@ app.get("/qr", (req, res) => {
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Scan WhatsApp QR</title></head>
 <body style="display:flex;min-height:100vh;align-items:center;justify-content:center;flex-direction:column;background:#f0f2f5;font-family:Arial,sans-serif">
   <h2>Scan to Link WhatsApp</h2>
-  <div id="qrcode" style="background:white;padding:20px;border-radius:12px;box-shadow:0 10px 25px rgba(15,23,42,.18)"></div>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script>new QRCode(document.getElementById("qrcode"),{text:${JSON.stringify(currentQR)},width:256,height:256});</script>
+  <div style="background:white;padding:20px;border-radius:12px;box-shadow:0 10px 25px rgba(15,23,42,.18)">
+    <img src="${currentQR}" alt="WhatsApp QR Code" style="width:256px; height:256px; border: 2px solid #ccc; padding: 10px; border-radius: 8px;" />
+  </div>
+  <p style="color:gray; font-size:14px; margin-top:20px;">Page refreshes automatically every 5 seconds.</p>
+  <script>setTimeout(() => location.reload(), 5000);</script>
 </body>
 </html>`);
 });
@@ -167,10 +172,8 @@ app.post("/send", async (req, res) => {
       throw httpError(400, "Valid array of phone numbers is required.");
     }
 
-    // Acknowledge immediately to Apps Script so it doesn't wait indefinitely
     res.json({ ok: true, type: "bulk-message", queuedCount: numbers.length });
 
-    // Process numbers sequentially in the background
     (async () => {
       for (let i = 0; i < numbers.length; i++) {
         const number = numbers[i];
@@ -182,7 +185,6 @@ app.post("/send", async (req, res) => {
           console.error(`Failed to send to ${number}:`, err.message);
         }
 
-        // Apply random delay between 5000ms (5s) and 30000ms (30s) if it's not the last number
         if (i < numbers.length - 1) {
           const delayMs = Math.floor(Math.random() * (30000 - 5000 + 1)) + 5000;
           console.log(`Waiting ${delayMs}ms before next message...`);
