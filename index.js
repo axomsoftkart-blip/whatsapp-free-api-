@@ -2,7 +2,7 @@
 
 const express = require("express");
 const pino = require("pino");
-const qrcode = require("qrcode"); // Backend QR generator added
+const qrcode = require("qrcode"); 
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -49,7 +49,7 @@ async function startSock() {
     sock = makeWASocket({
       version,
       auth: state,
-      printQRInTerminal: false,
+      printQRInTerminal: true, // टर्मिनल में QR कोड प्रिंट करने के लिए
       markOnlineOnConnect: false,
       browser: ["Bulk WhatsApp API", "Chrome", "1.0.0"],
       logger: pino({ level: process.env.LOG_LEVEL || "silent" }),
@@ -61,9 +61,8 @@ async function startSock() {
     sock.ev.on("connection.update", async (update) => {
       const { connection, lastDisconnect, qr } = update;
       if (qr) {
-        // Generate base64 image directly on the backend to prevent frontend crashes
         currentQR = await qrcode.toDataURL(qr);
-        console.log("QR ready. Open /qr to scan.");
+        console.log("QR ready. Scan it directly from this terminal!");
       }
       if (connection === "open") {
         currentQR = "";
@@ -128,21 +127,10 @@ app.get("/", (req, res) => {
   res.json({
     ok: true,
     service: "Bulk WhatsApp API",
-    ready: Boolean(sock && sock.user && sock.user.id),
-    qrAvailable: Boolean(currentQR)
+    ready: Boolean(sock && sock.user && sock.user.id)
   });
 });
 
-app.get("/health", (req, res) => {
-  res.json({
-    ok: true,
-    ready: Boolean(sock && sock.user && sock.user.id),
-    uptime: process.uptime(),
-    heapMb: Math.round(process.memoryUsage().heapUsed / 1024 / 1024)
-  });
-});
-
-// The updated QR route with foolproof rendering
 app.get("/qr", (req, res) => {
   if (!currentQR) {
     return res.send("<!doctype html><html><body style='font-family:Arial,sans-serif;text-align:center;margin-top:15vh'><h2>QR is not ready or already scanned.</h2><p>Refresh after a few seconds if the session is still connecting.</p></body></html>");
@@ -161,7 +149,6 @@ app.get("/qr", (req, res) => {
 </html>`);
 });
 
-// Bulk Messaging Endpoint (Called by Apps Script)
 app.post("/send", async (req, res) => {
   try {
     assertReady();
